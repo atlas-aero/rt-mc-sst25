@@ -1,0 +1,19 @@
+[package]
+name = "mc-sst25"
+description = "Library for the Microship SST25* flash memory series"
+keywords = ["SST25", "Microship", "no_std", "memory", "flash"]
+categories  = ["embedded", "hardware-support", "no-std"]
+authors = ["AtlasAero GmbH <info@atlasaero.eu>"]
+license = "MIT OR Apache-2.0"
+version = "0.0.1"
+edition = "2021"
+repository = "https://github.com/atlas-aero/rt-mc-sst25"
+readme = "README.md"
+documentation = "https://docs.rs/mc-sst25"
+
+[dependencies]
+embedded-hal = "0.2.7"
+
+[features]
+# Fail on warnings
+strict = []
