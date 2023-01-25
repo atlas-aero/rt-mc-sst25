@@ -78,6 +78,16 @@ impl<B: Transfer<u8>, P: OutputPin> Flash<B, P> {
         Ok(())
     }
 
+    /// Writes the given status to status registers
+    pub fn write_status(&mut self, status: Status) -> Result<(), CommandError<B, P>> {
+        self.write_enable()?;
+
+        self.bus.transfer(&mut [0x0]).map_err(CommandError::TransferError)?;
+        let _ = self.transfer(&mut [0b0000_0001, status.to_registers()])?;
+
+        Ok(())
+    }
+
     /// Erases the full chip. Disables internal write protection.
     /// Waits until operation is completed in blocking mode, otherwise returns when command is sent
     pub fn erase_full(&mut self) -> Result<(), CommandError<B, P>> {
@@ -91,21 +101,46 @@ impl<B: Transfer<u8>, P: OutputPin> Flash<B, P> {
     /// Programs/Writes the given byte at the given address. Disables internal write protection.
     /// Waits until operation is completed in blocking mode, otherwise returns when command is sent
     pub fn byte_program(&mut self, address: u32, data: u8) -> Result<(), CommandError<B, P>> {
-        if address > 16777216 {
-            return Err(CommandError::InvalidAddress);
-        }
+        self.assert_valid_address(address)?;
 
         self.write_enable()?;
         self.assert_not_busy()?;
 
-        self.transfer(&mut [
-            0b0000_0010,
-            (address >> 16) as u8,
-            (address >> 8) as u8,
-            address as u8,
-            data,
-        ])?;
+        let mut frame = [0b0000_0010, 0x0, 0x0, 0x0, data];
+        self.address_command(address, &mut frame);
+
+        self.transfer(&mut frame)?;
         self.wait()
+    }
+
+    /// Reads data with length L starting at the given address
+    pub fn read<const L: usize>(&mut self, address: u32) -> Result<[u8; L], CommandError<B, P>> {
+        self.assert_valid_address(address)?;
+        self.configure()?;
+
+        let mut frame = [0b0000_0011, 0x0, 0x0, 0x0];
+        self.address_command(address, &mut frame);
+
+        self.pin_enable.set_low().map_err(CommandError::EnablePinError)?;
+        if let Err(error) = self.bus.transfer(&mut frame) {
+            self.pin_enable.set_high().map_err(CommandError::EnablePinError)?;
+            return Err(CommandError::TransferError(error));
+        }
+
+        let mut buffer = [0x0; L];
+
+        match self.bus.transfer(&mut [0x0; L]) {
+            Ok(data) => {
+                buffer.clone_from_slice(data);
+            }
+            Err(error) => {
+                self.pin_enable.set_high().map_err(CommandError::EnablePinError)?;
+                return Err(CommandError::TransferError(error));
+            }
+        }
+
+        self.pin_enable.set_high().map_err(CommandError::EnablePinError)?;
+        Ok(buffer)
     }
 
     /// Transfers the given data and returns the result
@@ -120,10 +155,26 @@ impl<B: Transfer<u8>, P: OutputPin> Flash<B, P> {
         result
     }
 
+    /// Adds the given memory address to the command frame
+    fn address_command(&mut self, address: u32, frame: &mut [u8]) {
+        frame[1] = (address >> 16) as u8;
+        frame[2] = (address >> 8) as u8;
+        frame[3] = address as u8;
+    }
+
     /// Returns an error in case device is busy
     fn assert_not_busy(&mut self) -> Result<(), CommandError<B, P>> {
         if self.read_status()?.busy {
             return Err(CommandError::Busy);
+        }
+
+        Ok(())
+    }
+
+    /// Returns an error if the given address is out of range
+    fn assert_valid_address(&self, address: u32) -> Result<(), CommandError<B, P>> {
+        if address > 16777216 {
+            return Err(CommandError::InvalidAddress);
         }
 
         Ok(())
@@ -152,7 +203,7 @@ impl<B: Transfer<u8>, P: OutputPin> Flash<B, P> {
 }
 
 /// Mapped status register
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct Status {
     /// True if internal write operation is in progress
     pub busy: bool,
@@ -181,7 +232,8 @@ pub struct Status {
 }
 
 impl Status {
-    pub fn from_register(data: u8) -> Self {
+    /// Maps status bits to object
+    pub(crate) fn from_register(data: u8) -> Self {
         Self {
             busy: data & (1 << 0) != 0,
             write_enabled: data & (1 << 1) != 0,
@@ -192,5 +244,32 @@ impl Status {
             aai_programming_mode: data & (1 << 6) != 0,
             bits_read_only: data & (1 << 7) != 0,
         }
+    }
+
+    /// Converts the status to register byte. Only writable bits are used
+    pub(crate) fn to_registers(&self) -> u8 {
+        let mut result = 0x0;
+
+        if self.block0_protected {
+            result |= 0x1 << 2;
+        }
+
+        if self.block1_protected {
+            result |= 0x1 << 3;
+        }
+
+        if self.block2_protected {
+            result |= 0x1 << 4;
+        }
+
+        if self.block3_protected {
+            result |= 0x1 << 5;
+        }
+
+        if self.bits_read_only {
+            result |= 0x1 << 7;
+        }
+
+        result
     }
 }
