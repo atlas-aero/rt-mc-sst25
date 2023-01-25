@@ -21,9 +21,9 @@ pub struct Flash<B: Transfer<u8>, P: OutputPin> {
     configured: bool,
 }
 
-/// Error when reading data of device
+/// Error when communicating with the device
 #[derive(Debug, PartialEq, Eq)]
-pub enum ReadError<B: Transfer<u8>, P: OutputPin> {
+pub enum CommandError<B: Transfer<u8>, P: OutputPin> {
     /// SPI transfer error
     TransferError(B::Error),
 
@@ -32,6 +32,9 @@ pub enum ReadError<B: Transfer<u8>, P: OutputPin> {
 
     /// Error while setting GPIO state of HOLD pin
     HoldPinError(P::Error),
+
+    /// Error while setting GPIO state of WP pin
+    WriteProtectionPinError(P::Error),
 }
 
 impl<B: Transfer<u8>, P: OutputPin> Flash<B, P> {
@@ -46,23 +49,38 @@ impl<B: Transfer<u8>, P: OutputPin> Flash<B, P> {
     }
 
     /// Reads and returns the status registers
-    pub fn read_status(&mut self) -> Result<Status, ReadError<B, P>> {
+    pub fn read_status(&mut self) -> Result<Status, CommandError<B, P>> {
+        Ok(Status::from_register(self.transfer(&mut [0b0000_0101, 0x0])?[1]))
+    }
+
+    /// Enables write operations
+    pub fn write_enable(&mut self) -> Result<(), CommandError<B, P>> {
+        self.transfer(&mut [0b0000_0110])?;
+        Ok(())
+    }
+
+    /// Transfers the given data and returns the result
+    /// Handles the EN pin status and sets the pin back to HIGH even on error
+    fn transfer<'a>(&'a mut self, data: &'a mut [u8]) -> Result<&'a [u8], CommandError<B, P>> {
         self.configure()?;
 
-        self.pin_enable.set_low().map_err(ReadError::EnablePinError)?;
-        let status = self.bus.transfer(&mut [0b0000_0101, 0x0]).map_err(ReadError::TransferError)?[1];
-        self.pin_enable.set_high().map_err(ReadError::EnablePinError)?;
+        self.pin_enable.set_low().map_err(CommandError::EnablePinError)?;
+        let result = self.bus.transfer(data).map_err(CommandError::TransferError);
+        self.pin_enable.set_high().map_err(CommandError::EnablePinError)?;
 
-        Ok(Status::from_register(status))
+        result
     }
 
     /// Sets the base GPIO states once
-    fn configure(&mut self) -> Result<(), ReadError<B, P>> {
+    fn configure(&mut self) -> Result<(), CommandError<B, P>> {
         if self.configured {
             return Ok(());
         }
 
-        self.pin_hold.set_high().map_err(ReadError::HoldPinError)?;
+        self.pin_hold.set_high().map_err(CommandError::HoldPinError)?;
+        self.pin_write_protection
+            .set_low()
+            .map_err(CommandError::WriteProtectionPinError)?;
         self.configured = true;
 
         Ok(())

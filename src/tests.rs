@@ -1,25 +1,19 @@
-use crate::device::{Flash, ReadError, Status};
+use crate::device::{CommandError, Flash, Status};
 use crate::mocks::{MockPin, MockSPIBus};
 
 #[test]
 fn test_device_read_status_success() {
-    let pin_wp = MockPin::new();
-    let mut pin_en = MockPin::new();
-    pin_en.expect_set_low().times(1).return_const(Ok(()));
-    pin_en.expect_set_high().times(1).return_const(Ok(()));
+    let mut peripherals = MockedPeripherals::default().mock_configure().mock_enable();
 
-    let mut pin_hold = MockPin::new();
-    pin_hold.expect_set_high().times(1).return_const(Ok(()));
-
-    let mut bus = MockSPIBus::new();
-    bus.expect_transfer().times(1).returning(move |data: &mut [u8]| {
+    peripherals.bus.expect_transfer().times(1).returning(move |data: &mut [u8]| {
+        assert_eq!(2, data.len());
         assert_eq!(0b0000_0101, data[0]);
         assert_eq!(0x0, data[1]);
 
         Ok(&[0x0, 0x1C])
     });
 
-    let mut device = Flash::new(bus, pin_en, pin_wp, pin_hold);
+    let mut device = peripherals.into_flash();
     let status = device.read_status().unwrap();
 
     assert!(!status.busy);
@@ -34,53 +28,90 @@ fn test_device_read_status_success() {
 
 #[test]
 fn test_device_read_status_hold_error() {
-    let pin_wp = MockPin::new();
-    let pin_en = MockPin::new();
+    let error = MockedPeripherals::hold_error().into_flash().read_status().unwrap_err();
+    assert!(matches!(error, CommandError::HoldPinError(10)))
+}
 
-    let mut pin_hold = MockPin::new();
-    pin_hold.expect_set_high().times(1).return_const(Err(10));
-
-    let bus = MockSPIBus::new();
-
-    let mut device = Flash::new(bus, pin_en, pin_wp, pin_hold);
-    let error = device.read_status().unwrap_err();
-
-    assert!(matches!(error, ReadError::HoldPinError(10)))
+#[test]
+fn test_device_read_status_wp_pin_error() {
+    let error = MockedPeripherals::wp_error().into_flash().read_status().unwrap_err();
+    assert!(matches!(error, CommandError::WriteProtectionPinError(15)))
 }
 
 #[test]
 fn test_device_read_status_enable_error() {
-    let pin_wp = MockPin::new();
-    let mut pin_en = MockPin::new();
-    pin_en.expect_set_low().times(1).return_const(Err(20));
+    let error = MockedPeripherals::default()
+        .mock_configure()
+        .enable_error()
+        .into_flash()
+        .read_status()
+        .unwrap_err();
 
-    let mut pin_hold = MockPin::new();
-    pin_hold.expect_set_high().times(1).return_const(Ok(()));
-
-    let bus = MockSPIBus::new();
-
-    let mut device = Flash::new(bus, pin_en, pin_wp, pin_hold);
-    let error = device.read_status().unwrap_err();
-
-    assert!(matches!(error, ReadError::EnablePinError(20)))
+    assert!(matches!(error, CommandError::EnablePinError(20)))
 }
 
 #[test]
 fn test_device_read_status_transfer_error() {
-    let pin_wp = MockPin::new();
-    let mut pin_en = MockPin::new();
-    pin_en.expect_set_low().times(1).return_const(Ok(()));
+    let error = MockedPeripherals::default()
+        .mock_configure()
+        .mock_enable()
+        .spi_transfer_error()
+        .into_flash()
+        .read_status()
+        .unwrap_err();
 
-    let mut pin_hold = MockPin::new();
-    pin_hold.expect_set_high().times(1).return_const(Ok(()));
+    assert!(matches!(error, CommandError::TransferError(30)))
+}
 
-    let mut bus = MockSPIBus::new();
-    bus.expect_transfer().times(1).return_const(Err(30));
+#[test]
+fn test_device_write_enable_hold_error() {
+    let error = MockedPeripherals::hold_error().into_flash().write_enable().unwrap_err();
+    assert!(matches!(error, CommandError::HoldPinError(10)))
+}
 
-    let mut device = Flash::new(bus, pin_en, pin_wp, pin_hold);
-    let error = device.read_status().unwrap_err();
+#[test]
+fn test_device_write_enable_wp_pin_error() {
+    let error = MockedPeripherals::wp_error().into_flash().write_enable().unwrap_err();
+    assert!(matches!(error, CommandError::WriteProtectionPinError(15)))
+}
 
-    assert!(matches!(error, ReadError::TransferError(30)))
+#[test]
+fn test_device_write_enable_enable_error() {
+    let error = MockedPeripherals::default()
+        .mock_configure()
+        .enable_error()
+        .into_flash()
+        .write_enable()
+        .unwrap_err();
+
+    assert!(matches!(error, CommandError::EnablePinError(20)))
+}
+
+#[test]
+fn test_device_write_enable_transfer_error() {
+    let error = MockedPeripherals::default()
+        .mock_configure()
+        .mock_enable()
+        .spi_transfer_error()
+        .into_flash()
+        .write_enable()
+        .unwrap_err();
+
+    assert!(matches!(error, CommandError::TransferError(30)))
+}
+
+#[test]
+fn test_device_write_enable_success() {
+    let mut peripherals = MockedPeripherals::default().mock_configure().mock_enable();
+
+    peripherals.bus.expect_transfer().times(1).returning(move |data: &mut [u8]| {
+        assert_eq!(1, data.len());
+        assert_eq!(0b0000_0110, data[0]);
+
+        Ok(&[0x0])
+    });
+
+    peripherals.into_flash().write_enable().unwrap();
 }
 
 #[test]
@@ -108,4 +139,63 @@ fn test_status_from_register() {
 
     assert!(!Status::from_register(0b0111_1111).bits_read_only);
     assert!(Status::from_register(0b1000_0000).bits_read_only);
+}
+
+#[derive(Default)]
+struct MockedPeripherals {
+    pub pin_en: MockPin,
+    pub pin_hold: MockPin,
+    pub pin_wp: MockPin,
+    pub bus: MockSPIBus,
+}
+
+impl MockedPeripherals {
+    /// Returns a new flash device with mocked peripherals
+    pub fn into_flash(self) -> Flash<MockSPIBus, MockPin> {
+        Flash::new(self.bus, self.pin_en, self.pin_wp, self.pin_hold)
+    }
+
+    /// Simulates a error when setting HOLD state
+    pub fn hold_error() -> Self {
+        let mut peripherals = Self::default();
+        peripherals.pin_hold.expect_set_high().times(1).return_const(Err(10));
+        peripherals
+    }
+
+    /// Simulates a error when setting WP state
+    pub fn wp_error() -> Self {
+        let mut peripherals = Self::default();
+        peripherals.pin_hold.expect_set_high().times(1).return_const(Ok(()));
+        peripherals.pin_wp.expect_set_low().times(1).return_const(Err(15));
+
+        peripherals
+    }
+
+    /// Mocks a error of EN pin
+    pub fn enable_error(mut self) -> Self {
+        self.pin_en.expect_set_low().times(1).return_const(Err(20));
+        self
+    }
+
+    /// Simulates a SPI transfer error
+    pub fn spi_transfer_error(mut self) -> Self {
+        self.bus.expect_transfer().times(1).return_const(Err(30));
+        self
+    }
+
+    /// Mocks the one-time configuration logic
+    pub fn mock_configure(mut self) -> Self {
+        self.pin_hold.expect_set_high().times(1).return_const(Ok(()));
+        self.pin_wp.expect_set_low().times(1).return_const(Ok(()));
+
+        self
+    }
+
+    /// Mocks the transition of enable pin
+    pub fn mock_enable(mut self) -> Self {
+        self.pin_en.expect_set_low().times(1).return_const(Ok(()));
+        self.pin_en.expect_set_high().times(1).return_const(Ok(()));
+
+        self
+    }
 }
