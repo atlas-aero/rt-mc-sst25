@@ -40,6 +40,9 @@ pub enum CommandError<B: Transfer<u8>, P: OutputPin> {
 
     /// Chip is still busy executing another operation
     Busy,
+
+    /// The given memory address is out of range
+    InvalidAddress,
 }
 
 impl<B: Transfer<u8>, P: OutputPin> Flash<B, P> {
@@ -79,15 +82,30 @@ impl<B: Transfer<u8>, P: OutputPin> Flash<B, P> {
     /// Waits until operation is completed in blocking mode, otherwise returns when command is sent
     pub fn erase_full(&mut self) -> Result<(), CommandError<B, P>> {
         self.write_enable()?;
-
-        if self.read_status()?.busy {
-            return Err(CommandError::Busy);
-        }
+        self.assert_not_busy()?;
 
         self.transfer(&mut [0b0110_0000])?;
-        while self.blocking && self.read_status()?.busy {}
+        self.wait()
+    }
 
-        Ok(())
+    /// Programs/Writes the given byte at the given address. Disables internal write protection.
+    /// Waits until operation is completed in blocking mode, otherwise returns when command is sent
+    pub fn byte_program(&mut self, address: u32, data: u8) -> Result<(), CommandError<B, P>> {
+        if address > 16777216 {
+            return Err(CommandError::InvalidAddress);
+        }
+
+        self.write_enable()?;
+        self.assert_not_busy()?;
+
+        self.transfer(&mut [
+            0b0000_0010,
+            (address >> 16) as u8,
+            (address >> 8) as u8,
+            address as u8,
+            data,
+        ])?;
+        self.wait()
     }
 
     /// Transfers the given data and returns the result
@@ -100,6 +118,21 @@ impl<B: Transfer<u8>, P: OutputPin> Flash<B, P> {
         self.pin_enable.set_high().map_err(CommandError::EnablePinError)?;
 
         result
+    }
+
+    /// Returns an error in case device is busy
+    fn assert_not_busy(&mut self) -> Result<(), CommandError<B, P>> {
+        if self.read_status()?.busy {
+            return Err(CommandError::Busy);
+        }
+
+        Ok(())
+    }
+
+    /// Blocks until device is not busy anymore
+    fn wait(&mut self) -> Result<(), CommandError<B, P>> {
+        while self.blocking && self.read_status()?.busy {}
+        Ok(())
     }
 
     /// Sets the base GPIO states once

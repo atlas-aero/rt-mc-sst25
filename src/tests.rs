@@ -188,6 +188,88 @@ fn test_device_erase_full_non_blocking() {
 }
 
 #[test]
+fn test_device_program_byte_hold_error() {
+    let error = MockedPeripherals::hold_error().into_flash().erase_full().unwrap_err();
+    assert!(matches!(error, CommandError::HoldPinError(10)))
+}
+
+#[test]
+fn test_device_program_byte_wp_pin_error() {
+    let error = MockedPeripherals::wp_error().into_flash().erase_full().unwrap_err();
+    assert!(matches!(error, CommandError::WriteProtectionPinError(15)))
+}
+
+#[test]
+fn test_device_program_byte_address_error() {
+    let error = MockedPeripherals::default()
+        .into_flash()
+        .byte_program(16777217, 0x0)
+        .unwrap_err();
+    assert!(matches!(error, CommandError::InvalidAddress))
+}
+
+#[test]
+fn test_device_byte_program_transfer_error() {
+    let mut flash = MockedPeripherals::default()
+        .mock_configure()
+        .mock_enable_pin()
+        .expect_write_enable_command()
+        .mock_enable_pin()
+        .expect_status_request(&[0x0, 0b0000_0010])
+        .mock_enable_pin()
+        .spi_transfer_error()
+        .into_flash();
+
+    flash.set_non_blocking();
+    let error = flash.byte_program(0xdbba0, 0x96).unwrap_err();
+    assert!(matches!(error, CommandError::TransferError(30)))
+}
+
+#[test]
+fn test_device_byte_program_non_blocking() {
+    let mut flash = MockedPeripherals::default()
+        .mock_configure()
+        .mock_enable_pin()
+        .expect_write_enable_command()
+        .mock_enable_pin()
+        .expect_status_request(&[0x0, 0b0000_0010])
+        .mock_enable_pin()
+        .expect_transfer(
+            &[0b0000_0010, 0b0000_1101, 0b1011_1011, 0b1010_0000, 0x96],
+            &[0x0, 0x0, 0x0, 0x0, 0x0],
+        )
+        .into_flash();
+
+    flash.set_non_blocking();
+    flash.byte_program(0xdbba0, 0x96).unwrap();
+}
+
+#[test]
+fn test_device_byte_program_blocking() {
+    let mut flash = MockedPeripherals::default()
+        .mock_configure()
+        .mock_enable_pin()
+        .expect_write_enable_command()
+        .mock_enable_pin()
+        .expect_status_request(&[0x0, 0b0000_0010])
+        .mock_enable_pin()
+        .expect_transfer(
+            &[0b0000_0010, 0b0000_0000, 0b1001_1100, 0b0100_0000, 0x66],
+            &[0x0, 0x0, 0x0, 0x0, 0x0],
+        )
+        .mock_enable_pin()
+        .expect_status_request(&[0x0, 0b0000_0001]) // Still busy
+        .mock_enable_pin()
+        .expect_status_request(&[0x0, 0b0000_0001]) // Still busy
+        .mock_enable_pin()
+        .expect_status_request(&[0x0, 0b0000_0000])
+        .into_flash();
+
+    flash.set_blocking();
+    flash.byte_program(0x9c40, 0x66).unwrap();
+}
+
+#[test]
 fn test_status_from_register() {
     assert!(!Status::from_register(0b1111_1110).busy);
     assert!(Status::from_register(0b0000_0001).busy);
@@ -273,27 +355,27 @@ impl MockedPeripherals {
     }
 
     /// Expects a correct write-enable command
-    pub fn expect_write_enable_command(mut self) -> Self {
-        self.expect_transfer(&[0b0000_0110], &[0x0]);
-        self
+    pub fn expect_write_enable_command(self) -> Self {
+        self.expect_transfer(&[0b0000_0110], &[0x0])
     }
 
     /// Expects a status command request and returns the given raw response
-    pub fn expect_status_request(mut self, response: &'static [u8]) -> Self {
-        self.expect_transfer(&[0b0000_0101, 0x0], response);
-        self
+    pub fn expect_status_request(self, response: &'static [u8]) -> Self {
+        self.expect_transfer(&[0b0000_0101, 0x0], response)
     }
 
     /// Expects a full chip erase command
-    pub fn expect_full_erase(mut self) -> Self {
-        self.expect_transfer(&[0b0110_0000], &[0x0]);
-        self
+    pub fn expect_full_erase(self) -> Self {
+        self.expect_transfer(&[0b0110_0000], &[0x0])
     }
 
-    fn expect_transfer(&mut self, command: &'static [u8], response: &'static [u8]) {
+    /// Expects a generic command
+    pub fn expect_transfer(mut self, command: &'static [u8], response: &'static [u8]) -> Self {
         self.bus.expect_transfer().times(1).returning(move |data: &mut [u8]| {
             assert_eq!(command, data);
             Ok(response)
         });
+
+        self
     }
 }
