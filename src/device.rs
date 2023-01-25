@@ -11,7 +11,6 @@ pub struct Flash<B: Transfer<u8>, P: OutputPin> {
     pin_enable: P,
 
     /// GPIO WP pin
-    #[allow(unused)]
     pin_write_protection: P,
 
     /// GPIO Hold pin
@@ -19,6 +18,9 @@ pub struct Flash<B: Transfer<u8>, P: OutputPin> {
 
     /// Is the device configured?
     configured: bool,
+
+    /// True if blocks on longer lasting operations
+    blocking: bool,
 }
 
 /// Error when communicating with the device
@@ -35,6 +37,9 @@ pub enum CommandError<B: Transfer<u8>, P: OutputPin> {
 
     /// Error while setting GPIO state of WP pin
     WriteProtectionPinError(P::Error),
+
+    /// Chip is still busy executing another operation
+    Busy,
 }
 
 impl<B: Transfer<u8>, P: OutputPin> Flash<B, P> {
@@ -45,7 +50,18 @@ impl<B: Transfer<u8>, P: OutputPin> Flash<B, P> {
             pin_write_protection,
             pin_hold,
             configured: false,
+            blocking: true,
         }
+    }
+
+    /// Switches to blocking mode
+    pub fn set_blocking(&mut self) {
+        self.blocking = true;
+    }
+
+    /// Switches to non-blocking mode
+    pub fn set_non_blocking(&mut self) {
+        self.blocking = false;
     }
 
     /// Reads and returns the status registers
@@ -56,6 +72,21 @@ impl<B: Transfer<u8>, P: OutputPin> Flash<B, P> {
     /// Enables write operations
     pub fn write_enable(&mut self) -> Result<(), CommandError<B, P>> {
         self.transfer(&mut [0b0000_0110])?;
+        Ok(())
+    }
+
+    /// Erases the full chip. Disables internal write protection.
+    /// Waits until operation is completed in blocking mode, otherwise returns when command is sent
+    pub fn erase_full(&mut self) -> Result<(), CommandError<B, P>> {
+        self.write_enable()?;
+
+        if self.read_status()?.busy {
+            return Err(CommandError::Busy);
+        }
+
+        self.transfer(&mut [0b0110_0000])?;
+        while self.blocking && self.read_status()?.busy {}
+
         Ok(())
     }
 

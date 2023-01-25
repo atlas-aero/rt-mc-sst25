@@ -3,18 +3,13 @@ use crate::mocks::{MockPin, MockSPIBus};
 
 #[test]
 fn test_device_read_status_success() {
-    let mut peripherals = MockedPeripherals::default().mock_configure().mock_enable();
-
-    peripherals.bus.expect_transfer().times(1).returning(move |data: &mut [u8]| {
-        assert_eq!(2, data.len());
-        assert_eq!(0b0000_0101, data[0]);
-        assert_eq!(0x0, data[1]);
-
-        Ok(&[0x0, 0x1C])
-    });
-
-    let mut device = peripherals.into_flash();
-    let status = device.read_status().unwrap();
+    let status = MockedPeripherals::default()
+        .mock_configure()
+        .mock_enable_pin()
+        .expect_status_request(&[0x0, 0x1C])
+        .into_flash()
+        .read_status()
+        .unwrap();
 
     assert!(!status.busy);
     assert!(!status.write_enabled);
@@ -54,7 +49,7 @@ fn test_device_read_status_enable_error() {
 fn test_device_read_status_transfer_error() {
     let error = MockedPeripherals::default()
         .mock_configure()
-        .mock_enable()
+        .mock_enable_pin()
         .spi_transfer_error()
         .into_flash()
         .read_status()
@@ -91,7 +86,7 @@ fn test_device_write_enable_enable_error() {
 fn test_device_write_enable_transfer_error() {
     let error = MockedPeripherals::default()
         .mock_configure()
-        .mock_enable()
+        .mock_enable_pin()
         .spi_transfer_error()
         .into_flash()
         .write_enable()
@@ -102,16 +97,94 @@ fn test_device_write_enable_transfer_error() {
 
 #[test]
 fn test_device_write_enable_success() {
-    let mut peripherals = MockedPeripherals::default().mock_configure().mock_enable();
+    MockedPeripherals::default()
+        .mock_configure()
+        .mock_enable_pin()
+        .expect_write_enable_command()
+        .into_flash()
+        .write_enable()
+        .unwrap();
+}
 
-    peripherals.bus.expect_transfer().times(1).returning(move |data: &mut [u8]| {
-        assert_eq!(1, data.len());
-        assert_eq!(0b0000_0110, data[0]);
+#[test]
+fn test_device_erase_full_hold_error() {
+    let error = MockedPeripherals::hold_error().into_flash().erase_full().unwrap_err();
+    assert!(matches!(error, CommandError::HoldPinError(10)))
+}
 
-        Ok(&[0x0])
-    });
+#[test]
+fn test_device_erase_full_wp_pin_error() {
+    let error = MockedPeripherals::wp_error().into_flash().erase_full().unwrap_err();
+    assert!(matches!(error, CommandError::WriteProtectionPinError(15)))
+}
 
-    peripherals.into_flash().write_enable().unwrap();
+#[test]
+fn test_device_erase_full_busy() {
+    let error = MockedPeripherals::default()
+        .mock_configure()
+        .mock_enable_pin()
+        .expect_write_enable_command()
+        .mock_enable_pin()
+        .expect_status_request(&[0x0, 0b0000_0001])
+        .into_flash()
+        .erase_full()
+        .unwrap_err();
+
+    assert!(matches!(error, CommandError::Busy))
+}
+
+#[test]
+fn test_device_erase_transfer_error() {
+    let error = MockedPeripherals::default()
+        .mock_configure()
+        .mock_enable_pin()
+        .expect_write_enable_command()
+        .mock_enable_pin()
+        .expect_status_request(&[0x0, 0b0000_0010])
+        .mock_enable_pin()
+        .spi_transfer_error()
+        .into_flash()
+        .erase_full()
+        .unwrap_err();
+
+    assert!(matches!(error, CommandError::TransferError(30)))
+}
+
+#[test]
+fn test_device_erase_full_blocking() {
+    MockedPeripherals::default()
+        .mock_configure()
+        .mock_enable_pin()
+        .expect_write_enable_command()
+        .mock_enable_pin()
+        .expect_status_request(&[0x0, 0b0000_0010])
+        .mock_enable_pin()
+        .expect_full_erase()
+        .mock_enable_pin()
+        .expect_status_request(&[0x0, 0b0000_0001]) // Still busy
+        .mock_enable_pin()
+        .expect_status_request(&[0x0, 0b0000_0001]) // Still busy
+        .mock_enable_pin()
+        .expect_status_request(&[0x0, 0b0000_0000])
+        .into_flash()
+        .erase_full()
+        .unwrap();
+}
+
+#[test]
+fn test_device_erase_full_non_blocking() {
+    let mut flash = MockedPeripherals::default()
+        .mock_configure()
+        .mock_enable_pin()
+        .expect_write_enable_command()
+        .mock_enable_pin()
+        .expect_status_request(&[0x0, 0b0000_0010])
+        .mock_enable_pin()
+        .expect_full_erase()
+        .into_flash();
+
+    flash.set_non_blocking();
+    flash.erase_full().unwrap();
 }
 
 #[test]
@@ -192,10 +265,35 @@ impl MockedPeripherals {
     }
 
     /// Mocks the transition of enable pin
-    pub fn mock_enable(mut self) -> Self {
+    pub fn mock_enable_pin(mut self) -> Self {
         self.pin_en.expect_set_low().times(1).return_const(Ok(()));
         self.pin_en.expect_set_high().times(1).return_const(Ok(()));
 
         self
+    }
+
+    /// Expects a correct write-enable command
+    pub fn expect_write_enable_command(mut self) -> Self {
+        self.expect_transfer(&[0b0000_0110], &[0x0]);
+        self
+    }
+
+    /// Expects a status command request and returns the given raw response
+    pub fn expect_status_request(mut self, response: &'static [u8]) -> Self {
+        self.expect_transfer(&[0b0000_0101, 0x0], response);
+        self
+    }
+
+    /// Expects a full chip erase command
+    pub fn expect_full_erase(mut self) -> Self {
+        self.expect_transfer(&[0b0110_0000], &[0x0]);
+        self
+    }
+
+    fn expect_transfer(&mut self, command: &'static [u8], response: &'static [u8]) {
+        self.bus.expect_transfer().times(1).returning(move |data: &mut [u8]| {
+            assert_eq!(command, data);
+            Ok(response)
+        });
     }
 }
