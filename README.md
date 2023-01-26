@@ -1,8 +1,8 @@
 # I/O library for Microchip SST25 flash memory series
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
-[![Crates.io](https://img.shields.io/crates/v/mc-sst25.svg)](https://crates.io/crates/ltc681x)
-[![Actions Status](https://github.com/atlas-aero/rt-mc-sst25/workflows/QA/badge.svg)](http://github.com/pegasus-aero/rt-LTC681X/actions)
+[![Crates.io](https://img.shields.io/crates/v/mc-sst25.svg)](https://crates.io/crates/mc-sst25)
+[![Actions Status](https://github.com/atlas-aero/rt-mc-sst25/workflows/QA/badge.svg)](http://github.com/pegasus-aero/rt-mc-sst25/actions)
 
 Non-blocking crate for interacting with Microchip SST25 flash memory devices like 
 [SST25VF080B](https://ww1.microchip.com/downloads/en/DeviceDoc/20005045C.pdf).
@@ -18,7 +18,7 @@ Currently, the following features are implemented:
 ## Example
 For all details see [monitor](https://docs.rs/ltc681x/latest/ltc681x/monitor/index.html) module.
 
- ````Rust
+````rust
 use mc_sst25::device::Flash;
 use mc_sst25::example::{MockBus, MockPin};
 
@@ -39,7 +39,7 @@ device.aai_program(0x1, &[0x1, 0x2, 0x3, 0x4]).unwrap();
 // Reading data starting at address 0x0
 let data = device.read::<5>(0x0).unwrap();
 assert_eq!([0x66, 0x1, 0x2, 0x3, 0x4], data);
- ````
+````
 
 ## State
 
