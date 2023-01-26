@@ -107,6 +107,54 @@ fn test_device_write_enable_success() {
 }
 
 #[test]
+fn test_device_write_disable_hold_error() {
+    let error = MockedPeripherals::hold_error().into_flash().write_disable().unwrap_err();
+    assert!(matches!(error, CommandError::HoldPinError(10)))
+}
+
+#[test]
+fn test_device_write_disable_wp_pin_error() {
+    let error = MockedPeripherals::wp_error().into_flash().write_disable().unwrap_err();
+    assert!(matches!(error, CommandError::WriteProtectionPinError(15)))
+}
+
+#[test]
+fn test_device_write_disable_enable_error() {
+    let error = MockedPeripherals::default()
+        .mock_configure()
+        .enable_error()
+        .into_flash()
+        .write_disable()
+        .unwrap_err();
+
+    assert!(matches!(error, CommandError::EnablePinError(20)))
+}
+
+#[test]
+fn test_device_write_disable_transfer_error() {
+    let error = MockedPeripherals::default()
+        .mock_configure()
+        .mock_enable_pin()
+        .spi_transfer_error()
+        .into_flash()
+        .write_disable()
+        .unwrap_err();
+
+    assert!(matches!(error, CommandError::TransferError(30)))
+}
+
+#[test]
+fn test_device_write_disable_success() {
+    MockedPeripherals::default()
+        .mock_configure()
+        .mock_enable_pin()
+        .expect_write_disable_command()
+        .into_flash()
+        .write_disable()
+        .unwrap();
+}
+
+#[test]
 fn test_device_erase_full_hold_error() {
     let error = MockedPeripherals::hold_error().into_flash().erase_full().unwrap_err();
     assert!(matches!(error, CommandError::HoldPinError(10)))
@@ -384,6 +432,136 @@ fn test_device_read_success() {
 }
 
 #[test]
+fn test_device_aai_program_hold_error() {
+    let error = MockedPeripherals::hold_error()
+        .into_flash()
+        .aai_program(0x0, &[0x0, 0x0])
+        .unwrap_err();
+    assert!(matches!(error, CommandError::HoldPinError(10)))
+}
+
+#[test]
+fn test_device_aai_program_wp_pin_error() {
+    let error = MockedPeripherals::wp_error()
+        .into_flash()
+        .aai_program(0x0, &[0x0, 0x0])
+        .unwrap_err();
+    assert!(matches!(error, CommandError::WriteProtectionPinError(15)))
+}
+
+#[test]
+fn test_device_aai_program_address_error() {
+    let error = MockedPeripherals::default()
+        .into_flash()
+        .aai_program(16777217, &[0x0, 0x0])
+        .unwrap_err();
+    assert!(matches!(error, CommandError::InvalidAddress))
+}
+
+#[test]
+fn test_device_aai_program_buffer_too_small_error() {
+    let error = MockedPeripherals::default().into_flash().aai_program(0x0, &[0x0]).unwrap_err();
+    assert!(matches!(error, CommandError::BufferTooSmall))
+}
+
+#[test]
+fn test_device_aai_program_buffer_uneven_error() {
+    let error = MockedPeripherals::default()
+        .into_flash()
+        .aai_program(0x0, &[0x0, 0x0, 0x0])
+        .unwrap_err();
+    assert!(matches!(error, CommandError::BufferUneven))
+}
+
+#[test]
+fn test_device_aai_program_busy_error() {
+    let error = MockedPeripherals::default()
+        .mock_configure()
+        .mock_enable_pin()
+        .expect_write_enable_command()
+        .mock_enable_pin()
+        .expect_status_request(&[0x0, 0b0000_0001])
+        .into_flash()
+        .aai_program(0x0, &[0x0, 0x0])
+        .unwrap_err();
+    assert!(matches!(error, CommandError::Busy))
+}
+
+#[test]
+fn test_device_aai_program_transfer_error() {
+    let error = MockedPeripherals::default()
+        .mock_configure()
+        .mock_enable_pin()
+        .expect_write_enable_command()
+        .mock_enable_pin()
+        .expect_status_request(&[0x0, 0b0000_0000])
+        .mock_enable_pin()
+        .spi_transfer_error()
+        .into_flash()
+        .aai_program(0x0, &[0x0, 0x0])
+        .unwrap_err();
+    assert!(matches!(error, CommandError::TransferError(30)))
+}
+
+#[test]
+fn test_device_aai_program_two_bytes() {
+    let mut flash = MockedPeripherals::default()
+        .mock_configure()
+        .mock_enable_pin()
+        .expect_write_enable_command()
+        .mock_enable_pin()
+        .expect_status_request(&[0x0, 0b0000_0000])
+        .mock_enable_pin()
+        .expect_transfer(
+            &[0b1010_1101, 0b0000_0111, 0b1010_0001, 0b0010_0000, 0x96, 0x64],
+            &[0x0; 6],
+        )
+        .mock_enable_pin()
+        .expect_status_request(&[0x0, 0b0000_0001]) // Still busy
+        .mock_enable_pin()
+        .expect_status_request(&[0x0, 0b0000_0000]) // Not busy anymore
+        .mock_enable_pin()
+        .expect_write_disable_command()
+        .into_flash();
+
+    flash.set_non_blocking();
+    flash.aai_program(0x7A120, &[0x96, 0x64]).unwrap();
+}
+
+#[test]
+fn test_device_aai_program_six_bytes() {
+    let mut flash = MockedPeripherals::default()
+        .mock_configure()
+        .mock_enable_pin()
+        .expect_write_enable_command()
+        .mock_enable_pin()
+        .expect_status_request(&[0x0, 0b0000_0000])
+        .mock_enable_pin()
+        .expect_transfer(
+            &[0b1010_1101, 0b0000_0111, 0b1010_0001, 0b0010_0000, 0x96, 0x64],
+            &[0x0; 6],
+        )
+        .mock_enable_pin()
+        .expect_status_request(&[0x0, 0b0000_0001]) // Still busy
+        .mock_enable_pin()
+        .expect_status_request(&[0x0, 0b0000_0000])
+        .mock_enable_pin()
+        .expect_transfer(&[0b1010_1101, 0x44, 0x55], &[0x0; 3])
+        .mock_enable_pin()
+        .expect_status_request(&[0x0, 0b0000_0000]) // Not busy anymore
+        .mock_enable_pin()
+        .expect_transfer(&[0b1010_1101, 0x66, 0x77], &[0x0; 3])
+        .mock_enable_pin()
+        .expect_status_request(&[0x0, 0b0000_0000]) // not busy
+        .mock_enable_pin()
+        .expect_write_disable_command()
+        .into_flash();
+
+    flash.set_non_blocking();
+    flash.aai_program(0x7A120, &[0x96, 0x64, 0x44, 0x55, 0x66, 0x77]).unwrap();
+}
+
+#[test]
 fn test_status_from_register() {
     assert!(!Status::from_register(0b1111_1110).busy);
     assert!(Status::from_register(0b0000_0001).busy);
@@ -495,6 +673,11 @@ impl MockedPeripherals {
     /// Expects a correct write-enable command
     pub fn expect_write_enable_command(self) -> Self {
         self.expect_transfer(&[0b0000_0110], &[0x0])
+    }
+
+    /// Expects a correct write-disable command
+    pub fn expect_write_disable_command(self) -> Self {
+        self.expect_transfer(&[0b0000_0100], &[0x0])
     }
 
     /// Expects a status command request and returns the given raw response

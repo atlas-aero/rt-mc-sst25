@@ -43,7 +43,15 @@ pub enum CommandError<B: Transfer<u8>, P: OutputPin> {
 
     /// The given memory address is out of range
     InvalidAddress,
+
+    /// The given buffer size is too small for the called operation
+    BufferTooSmall,
+
+    /// The called operation requires an even buffer size
+    BufferUneven,
 }
+
+const CMD_AAI_PROGRAM: u8 = 0b1010_1101;
 
 impl<B: Transfer<u8>, P: OutputPin> Flash<B, P> {
     pub fn new(bus: B, pin_enable: P, pin_write_protection: P, pin_hold: P) -> Self {
@@ -78,6 +86,12 @@ impl<B: Transfer<u8>, P: OutputPin> Flash<B, P> {
         Ok(())
     }
 
+    /// Enables write operations
+    pub fn write_disable(&mut self) -> Result<(), CommandError<B, P>> {
+        self.transfer(&mut [0b0000_0100])?;
+        Ok(())
+    }
+
     /// Writes the given status to status registers
     pub fn write_status(&mut self, status: Status) -> Result<(), CommandError<B, P>> {
         self.write_enable()?;
@@ -95,7 +109,7 @@ impl<B: Transfer<u8>, P: OutputPin> Flash<B, P> {
         self.assert_not_busy()?;
 
         self.transfer(&mut [0b0110_0000])?;
-        self.wait()
+        self.wait(false)
     }
 
     /// Programs/Writes the given byte at the given address. Disables internal write protection.
@@ -110,7 +124,36 @@ impl<B: Transfer<u8>, P: OutputPin> Flash<B, P> {
         self.address_command(address, &mut frame);
 
         self.transfer(&mut frame)?;
-        self.wait()
+        self.wait(false)
+    }
+
+    /// Auto address increment (AAI) programming for writing larger amount of data
+    /// Buffer needs to contain at least two bytes and an even data amount
+    pub fn aai_program(&mut self, address: u32, buffer: &[u8]) -> Result<(), CommandError<B, P>> {
+        self.assert_valid_address(address)?;
+
+        if buffer.len() < 2 {
+            return Err(CommandError::BufferTooSmall);
+        }
+
+        if buffer.len() & 1 == 1 {
+            return Err(CommandError::BufferUneven);
+        }
+
+        self.write_enable()?;
+        self.assert_not_busy()?;
+
+        let mut frame = [CMD_AAI_PROGRAM, 0x0, 0x0, 0x0, buffer[0], buffer[1]];
+        self.address_command(address, &mut frame);
+        self.transfer(&mut frame)?;
+        self.wait(true)?;
+
+        for chunk in buffer[2..].chunks(2) {
+            self.transfer(&mut [CMD_AAI_PROGRAM, chunk[0], chunk[1]])?;
+            self.wait(true)?;
+        }
+
+        self.write_disable()
     }
 
     /// Reads data with length L starting at the given address
@@ -181,8 +224,8 @@ impl<B: Transfer<u8>, P: OutputPin> Flash<B, P> {
     }
 
     /// Blocks until device is not busy anymore
-    fn wait(&mut self) -> Result<(), CommandError<B, P>> {
-        while self.blocking && self.read_status()?.busy {}
+    fn wait(&mut self, force: bool) -> Result<(), CommandError<B, P>> {
+        while (self.blocking || force) && self.read_status()?.busy {}
         Ok(())
     }
 
