@@ -5,7 +5,7 @@ keywords = ["SST25", "Microship", "no_std", "memory", "flash"]
 categories  = ["embedded", "hardware-support", "no-std"]
 authors = ["AtlasAero GmbH <info@atlasaero.eu>"]
 license = "MIT OR Apache-2.0"
-version = "0.0.1"
+version = "0.1.0"
 edition = "2021"
 repository = "https://github.com/atlas-aero/rt-mc-sst25"
 readme = "README.md"
@@ -18,6 +18,10 @@ embedded-hal = "0.2.7"
 mockall = "0.11.3"
 
 [features]
-default = []
+default = ["example"]
+
+# Mocks for doc examples
+example = []
+
 # Fail on warnings
 strict = []

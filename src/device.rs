@@ -1,3 +1,172 @@
+//! # Non-Blocking & blocking SPI protocol abstraction
+//!
+//! ## Setup
+//!
+//! Creating a [device](Flash) instance requires the following peripherals:
+//! * An SPI bus implementing [embedded-hal Transfer trait](embedded_hal::blocking::spi::Transfer)
+//! * Three GPIO pins connected to EN, WP and HOLD of the flash chip implementing [embedded-hal OutputPin](embedded_hal::digital::v2::OutputPin)
+//!
+//! The device can be communicated with either in blocking or non-blocking mode:
+//! * In the case of blocking mode, the library waits internally until the respective operation is
+//! completely finished.
+//! * In the case of non-blocking mode, it is up to the caller to check the busy flag of the status register.
+//! (s. [Reading status register](#reading-status))
+//!
+//! ````
+//!# use mc_sst25::device::Flash;
+//!# use mc_sst25::example::{MockBus, MockPin};
+//!#
+//!# let bus = MockBus::default();
+//!# let pin_en = MockPin::default();
+//!# let pin_hold = MockPin::default();
+//!# let pin_wp = MockPin::default();
+//!#
+//! let mut device = Flash::new(bus, pin_en, pin_wp, pin_hold);
+//!
+//! // Blocking mode (default)
+//! device.set_blocking();
+//!
+//! // Non-blocking
+//! device.set_non_blocking();
+//! ````
+//!
+//! ## Reading status
+//!
+//! The device contains eight status bits, which are mapped to [Status] struct.
+//!
+//! ````
+//!# use mc_sst25::device::Flash;
+//!# use mc_sst25::example::{MockBus, MockPin};
+//!#
+//!# let bus = MockBus::default();
+//!# let pin_en = MockPin::default();
+//!# let pin_hold = MockPin::default();
+//!# let pin_wp = MockPin::default();
+//!#
+//!# let mut device = Flash::new(bus, pin_en, pin_wp, pin_hold);
+//!#
+//! let status = device.read_status().unwrap();
+//!
+//! assert!(!status.busy);
+//! assert!(!status.block0_protected);
+//! assert!(!status.write_enabled);
+//! ````
+//!
+//! ## Writing status
+//!
+//! The following status flags are used for (write) protecting memory segments.
+//! On device power-up all memory blocks are protected.
+//!
+//! ````
+//!# use mc_sst25::device::{Flash, Status};
+//!# use mc_sst25::example::{MockBus, MockPin};
+//!#
+//!# let bus = MockBus::default();
+//!# let pin_en = MockPin::default();
+//!# let pin_hold = MockPin::default();
+//!# let pin_wp = MockPin::default();
+//!#
+//!# let mut device = Flash::new(bus, pin_en, pin_wp, pin_hold);
+//!#
+//! let mut  status = Status::default();
+//! status.block0_protected = false;
+//! status.block1_protected = false;
+//! status.block2_protected = true;
+//! status.block3_protected = true;
+//! status.bits_read_only = false;
+//!
+//! device.write_status(status).unwrap();
+//! ````
+//!
+//! ## Writing single bytes
+//!
+//! The following method is used for writing single bytes.
+//!
+//! *Note: Memory region needs to be unprotected (s. [Reading status](#reading-status)), otherwise
+//! write operation is ignored by device*
+//! ````
+//!# use mc_sst25::device::{Flash, Status};
+//!# use mc_sst25::example::{MockBus, MockPin};
+//!#
+//!# let bus = MockBus::default();
+//!# let pin_en = MockPin::default();
+//!# let pin_hold = MockPin::default();
+//!# let pin_wp = MockPin::default();
+//!#
+//!# let mut device = Flash::new(bus, pin_en, pin_wp, pin_hold);
+//!#
+//! // Writing byte 0x64 to address 0xc8
+//! device.byte_program(0xc8, 0x64).unwrap();
+//! ````
+//!
+//! ## Writing larger data
+//!
+//! Auto-address-increment method is used for writing larger amount of data. The given buffer needs to
+//! contain an even amount of data. (e.g 2, 4, 6, 8, ... bytes).
+//!
+//! *Note: Memory region needs to be unprotected (s. [Reading status](#reading-status)), otherwise
+//! write operation is ignored by device*
+//! ````
+//!# use mc_sst25::device::{Flash, Status};
+//!# use mc_sst25::example::{MockBus, MockPin};
+//!#
+//!# let bus = MockBus::default();
+//!# let pin_en = MockPin::default();
+//!# let pin_hold = MockPin::default();
+//!# let pin_wp = MockPin::default();
+//!#
+//!# let mut device = Flash::new(bus, pin_en, pin_wp, pin_hold);
+//!#
+//! // Writing four bytes to address 0x5, so the following data is written:
+//! // Address 0x5 contains byte 0x1
+//! // Address 0x6 contains byte 0x2
+//! // ...
+//! device.aai_program(0x5, &[0x1, 0x2, 0x3, 0x4]).unwrap();
+//! ````
+//!
+//! ## Full chip erase
+//!
+//! The chip supports erasing the entire memory.
+//!
+//! *Note: All memory blocks needs to be unprotected (s. [Reading status](#reading-status)), otherwise
+//! erase operation is ignored by device*
+//! ````
+//!# use mc_sst25::device::{Flash, Status};
+//!# use mc_sst25::example::{MockBus, MockPin};
+//!#
+//!# let bus = MockBus::default();
+//!# let pin_en = MockPin::default();
+//!# let pin_hold = MockPin::default();
+//!# let pin_wp = MockPin::default();
+//!#
+//!# let mut device = Flash::new(bus, pin_en, pin_wp, pin_hold);
+//!#
+//! device.erase_full().unwrap();
+//! ````
+//!
+//! ## Reading memory
+//!
+//! Reading an arbitrary amount of data starting at the given address. The data amount is determined
+//! by the generic const L.
+//!
+//! *Note: If the maximum address is within range, the chip wraps automatically and continuous
+//! at the first address.*
+//!
+//! ````
+//!# use mc_sst25::device::{Flash, Status};
+//!# use mc_sst25::example::{MockBus, MockPin};
+//!#
+//!# let bus = MockBus::default();
+//!# let pin_en = MockPin::default();
+//!# let pin_hold = MockPin::default();
+//!# let pin_wp = MockPin::default();
+//!#
+//!# let mut device = Flash::new(bus, pin_en, pin_wp, pin_hold);
+//!#
+//! // Reading four bytes starting at address 0x0
+//! let data = device.read::<4>(0x0).unwrap();
+//! assert_eq!([0xa, 0xb, 0xc, 0xd], data);
+//! ````
 use core::fmt::Debug;
 use embedded_hal::blocking::spi::Transfer;
 use embedded_hal::digital::v2::OutputPin;
@@ -102,7 +271,7 @@ impl<B: Transfer<u8>, P: OutputPin> Flash<B, P> {
         Ok(())
     }
 
-    /// Erases the full chip. Disables internal write protection.
+    /// Erases the full chip.
     /// Waits until operation is completed in blocking mode, otherwise returns when command is sent
     pub fn erase_full(&mut self) -> Result<(), CommandError<B, P>> {
         self.write_enable()?;
