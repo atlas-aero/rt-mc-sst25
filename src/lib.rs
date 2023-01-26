@@ -8,7 +8,7 @@
 //! For all details see [device](crate::device) module.
 //!
 //! ````
-//! use mc_sst25::device::Flash;
+//! use mc_sst25::device::{Flash, Memory};
 //! use mc_sst25::example::{MockBus, MockPin};
 //!
 //! let bus = MockBus::default();

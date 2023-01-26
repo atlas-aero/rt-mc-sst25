@@ -13,7 +13,7 @@
 //! (s. [Reading status register](#reading-status))
 //!
 //! ````
-//!# use mc_sst25::device::Flash;
+//!# use mc_sst25::device::{Flash, Memory};
 //!# use mc_sst25::example::{MockBus, MockPin};
 //!#
 //!# let bus = MockBus::default();
@@ -35,7 +35,7 @@
 //! The device contains eight status bits, which are mapped to [Status] struct.
 //!
 //! ````
-//!# use mc_sst25::device::Flash;
+//!# use mc_sst25::device::{Flash, Memory};
 //!# use mc_sst25::example::{MockBus, MockPin};
 //!#
 //!# let bus = MockBus::default();
@@ -58,7 +58,7 @@
 //! On device power-up all memory blocks are protected.
 //!
 //! ````
-//!# use mc_sst25::device::{Flash, Status};
+//!# use mc_sst25::device::{Flash, Memory, Status};
 //!# use mc_sst25::example::{MockBus, MockPin};
 //!#
 //!# let bus = MockBus::default();
@@ -85,7 +85,7 @@
 //! *Note: Memory region needs to be unprotected (s. [Reading status](#reading-status)), otherwise
 //! write operation is ignored by device*
 //! ````
-//!# use mc_sst25::device::{Flash, Status};
+//!# use mc_sst25::device::{Flash, Memory, Status};
 //!# use mc_sst25::example::{MockBus, MockPin};
 //!#
 //!# let bus = MockBus::default();
@@ -107,7 +107,7 @@
 //! *Note: Memory region needs to be unprotected (s. [Reading status](#reading-status)), otherwise
 //! write operation is ignored by device*
 //! ````
-//!# use mc_sst25::device::{Flash, Status};
+//!# use mc_sst25::device::{Flash, Memory, Status};
 //!# use mc_sst25::example::{MockBus, MockPin};
 //!#
 //!# let bus = MockBus::default();
@@ -131,7 +131,7 @@
 //! *Note: All memory blocks needs to be unprotected (s. [Reading status](#reading-status)), otherwise
 //! erase operation is ignored by device*
 //! ````
-//!# use mc_sst25::device::{Flash, Status};
+//!# use mc_sst25::device::{Flash, Memory, Status};
 //!# use mc_sst25::example::{MockBus, MockPin};
 //!#
 //!# let bus = MockBus::default();
@@ -153,7 +153,7 @@
 //! at the first address.*
 //!
 //! ````
-//!# use mc_sst25::device::{Flash, Status};
+//!# use mc_sst25::device::{Flash, Status, Memory};
 //!# use mc_sst25::example::{MockBus, MockPin};
 //!#
 //!# let bus = MockBus::default();
@@ -170,6 +170,41 @@
 use core::fmt::Debug;
 use embedded_hal::blocking::spi::Transfer;
 use embedded_hal::digital::v2::OutputPin;
+
+/// General flash memory interface
+pub trait Memory {
+    type Error;
+
+    /// Switches to blocking mode
+    fn set_blocking(&mut self);
+
+    /// Switches to non-blocking mode
+    fn set_non_blocking(&mut self);
+
+    /// Reads and returns the status registers
+    fn read_status(&mut self) -> Result<Status, Self::Error>;
+
+    /// Enables write operations
+    fn write_enable(&mut self) -> Result<(), Self::Error>;
+
+    /// Enables write operations
+    fn write_disable(&mut self) -> Result<(), Self::Error>;
+
+    /// Writes the given status to status registers
+    fn write_status(&mut self, status: Status) -> Result<(), Self::Error>;
+
+    /// Erases the full chip.
+    fn erase_full(&mut self) -> Result<(), Self::Error>;
+
+    /// Programs/Writes the given byte at the given address.
+    fn byte_program(&mut self, address: u32, data: u8) -> Result<(), Self::Error>;
+
+    /// Auto address increment (AAI) programming for writing larger amount of data
+    fn aai_program(&mut self, address: u32, buffer: &[u8]) -> Result<(), Self::Error>;
+
+    /// Reads data with length L starting at the given address
+    fn read<const L: usize>(&mut self, address: u32) -> Result<[u8; L], Self::Error>;
+}
 
 /// SS25* flash memory chip
 pub struct Flash<B: Transfer<u8>, P: OutputPin> {
@@ -222,47 +257,38 @@ pub enum CommandError<B: Transfer<u8>, P: OutputPin> {
 
 const CMD_AAI_PROGRAM: u8 = 0b1010_1101;
 
-impl<B: Transfer<u8>, P: OutputPin> Flash<B, P> {
-    pub fn new(bus: B, pin_enable: P, pin_write_protection: P, pin_hold: P) -> Self {
-        Self {
-            bus,
-            pin_enable,
-            pin_write_protection,
-            pin_hold,
-            configured: false,
-            blocking: true,
-        }
-    }
+impl<B: Transfer<u8>, P: OutputPin> Memory for Flash<B, P> {
+    type Error = CommandError<B, P>;
 
     /// Switches to blocking mode
-    pub fn set_blocking(&mut self) {
+    fn set_blocking(&mut self) {
         self.blocking = true;
     }
 
     /// Switches to non-blocking mode
-    pub fn set_non_blocking(&mut self) {
+    fn set_non_blocking(&mut self) {
         self.blocking = false;
     }
 
     /// Reads and returns the status registers
-    pub fn read_status(&mut self) -> Result<Status, CommandError<B, P>> {
+    fn read_status(&mut self) -> Result<Status, CommandError<B, P>> {
         Ok(Status::from_register(self.transfer(&mut [0b0000_0101, 0x0])?[1]))
     }
 
     /// Enables write operations
-    pub fn write_enable(&mut self) -> Result<(), CommandError<B, P>> {
+    fn write_enable(&mut self) -> Result<(), CommandError<B, P>> {
         self.transfer(&mut [0b0000_0110])?;
         Ok(())
     }
 
     /// Enables write operations
-    pub fn write_disable(&mut self) -> Result<(), CommandError<B, P>> {
+    fn write_disable(&mut self) -> Result<(), CommandError<B, P>> {
         self.transfer(&mut [0b0000_0100])?;
         Ok(())
     }
 
     /// Writes the given status to status registers
-    pub fn write_status(&mut self, status: Status) -> Result<(), CommandError<B, P>> {
+    fn write_status(&mut self, status: Status) -> Result<(), CommandError<B, P>> {
         self.write_enable()?;
 
         self.bus.transfer(&mut [0x0]).map_err(CommandError::TransferError)?;
@@ -273,7 +299,7 @@ impl<B: Transfer<u8>, P: OutputPin> Flash<B, P> {
 
     /// Erases the full chip.
     /// Waits until operation is completed in blocking mode, otherwise returns when command is sent
-    pub fn erase_full(&mut self) -> Result<(), CommandError<B, P>> {
+    fn erase_full(&mut self) -> Result<(), CommandError<B, P>> {
         self.write_enable()?;
         self.assert_not_busy()?;
 
@@ -283,7 +309,7 @@ impl<B: Transfer<u8>, P: OutputPin> Flash<B, P> {
 
     /// Programs/Writes the given byte at the given address. Disables internal write protection.
     /// Waits until operation is completed in blocking mode, otherwise returns when command is sent
-    pub fn byte_program(&mut self, address: u32, data: u8) -> Result<(), CommandError<B, P>> {
+    fn byte_program(&mut self, address: u32, data: u8) -> Result<(), CommandError<B, P>> {
         self.assert_valid_address(address)?;
 
         self.write_enable()?;
@@ -298,7 +324,7 @@ impl<B: Transfer<u8>, P: OutputPin> Flash<B, P> {
 
     /// Auto address increment (AAI) programming for writing larger amount of data
     /// Buffer needs to contain at least two bytes and an even data amount
-    pub fn aai_program(&mut self, address: u32, buffer: &[u8]) -> Result<(), CommandError<B, P>> {
+    fn aai_program(&mut self, address: u32, buffer: &[u8]) -> Result<(), CommandError<B, P>> {
         self.assert_valid_address(address)?;
 
         if buffer.len() < 2 {
@@ -326,7 +352,7 @@ impl<B: Transfer<u8>, P: OutputPin> Flash<B, P> {
     }
 
     /// Reads data with length L starting at the given address
-    pub fn read<const L: usize>(&mut self, address: u32) -> Result<[u8; L], CommandError<B, P>> {
+    fn read<const L: usize>(&mut self, address: u32) -> Result<[u8; L], CommandError<B, P>> {
         self.assert_valid_address(address)?;
         self.configure()?;
 
@@ -353,6 +379,19 @@ impl<B: Transfer<u8>, P: OutputPin> Flash<B, P> {
 
         self.pin_enable.set_high().map_err(CommandError::EnablePinError)?;
         Ok(buffer)
+    }
+}
+
+impl<B: Transfer<u8>, P: OutputPin> Flash<B, P> {
+    pub fn new(bus: B, pin_enable: P, pin_write_protection: P, pin_hold: P) -> Self {
+        Self {
+            bus,
+            pin_enable,
+            pin_write_protection,
+            pin_hold,
+            configured: false,
+            blocking: true,
+        }
     }
 
     /// Transfers the given data and returns the result

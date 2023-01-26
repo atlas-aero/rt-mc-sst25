@@ -1,4 +1,4 @@
-use crate::device::{CommandError, Flash, Status};
+use crate::device::{CommandError, Flash, Memory, Status};
 use crate::mocks::{MockPin, MockSPIBus};
 
 #[test]
