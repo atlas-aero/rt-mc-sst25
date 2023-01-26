@@ -8,12 +8,12 @@ Non-blocking crate for interacting with Microchip SST25 flash memory devices lik
 [SST25VF080B](https://ww1.microchip.com/downloads/en/DeviceDoc/20005045C.pdf).
 
 Currently, the following features are implemented:
-* [Reading memory](https://docs.rs/mc-sst25/latest/mc-sst25/device/index.html#reading-memory)
-* [Writing single bytes](https://docs.rs/mc-sst25/latest/mc-sst25/device/index.html#writing-single-bytes)
-* [Auto-address-increment writes](https://docs.rs/mc-sst25/latest/mc-sst25/device/index.html#writing-larger-data)
-* [Full chip erase](https://docs.rs/mc-sst25/latest/mc-sst25/device/index.html#full-chip-erase)
-* [Reading status](https://docs.rs/mc-sst25/latest/mc-sst25/device/index.html#reading-status)
-* [Writing status](https://docs.rs/mc-sst25/latest/mc-sst25/device/index.html#writing-status)
+* [Reading memory](https://docs.rs/mc-sst25/latest/mc_sst25/device/index.html#reading-memory)
+* [Writing single bytes](https://docs.rs/mc-sst25/latest/mc_sst25/device/index.html#writing-single-bytes)
+* [Auto-address-increment writes](https://docs.rs/mc-sst25/latest/mc_sst25/device/index.html#writing-larger-data)
+* [Full chip erase](https://docs.rs/mc-sst25/latest/mc_sst25/device/index.html#full-chip-erase)
+* [Reading status](https://docs.rs/mc-sst25/latest/mc_sst25/device/index.html#reading-status)
+* [Writing status](https://docs.rs/mc-sst25/latest/mc_sst25/device/index.html#writing-status)
 
 ## Example
 For all details see [monitor](https://docs.rs/ltc681x/latest/ltc681x/monitor/index.html) module.
