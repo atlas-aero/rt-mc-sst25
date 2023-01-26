@@ -454,7 +454,7 @@ impl<B: Transfer<u8>, P: OutputPin> Flash<B, P> {
 }
 
 /// Mapped status register
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct Status {
     /// True if internal write operation is in progress
     pub busy: bool,
