@@ -167,13 +167,13 @@
 //! let data = device.read::<4>(0x0).unwrap();
 //! assert_eq!([0xa, 0xb, 0xc, 0xd], data);
 //! ````
-use core::fmt::Debug;
+use core::fmt::{Debug, Formatter};
 use embedded_hal::blocking::spi::Transfer;
 use embedded_hal::digital::v2::OutputPin;
 
 /// General flash memory interface
 pub trait Memory {
-    type Error;
+    type Error: Debug;
 
     /// Switches to blocking mode
     fn set_blocking(&mut self);
@@ -228,7 +228,7 @@ pub struct Flash<B: Transfer<u8>, P: OutputPin> {
 }
 
 /// Error when communicating with the device
-#[derive(Debug, PartialEq, Eq)]
+#[derive(PartialEq, Eq)]
 pub enum CommandError<B: Transfer<u8>, P: OutputPin> {
     /// SPI transfer error
     TransferError(B::Error),
@@ -257,7 +257,11 @@ pub enum CommandError<B: Transfer<u8>, P: OutputPin> {
 
 const CMD_AAI_PROGRAM: u8 = 0b1010_1101;
 
-impl<B: Transfer<u8>, P: OutputPin> Memory for Flash<B, P> {
+impl<B: Transfer<u8>, P: OutputPin> Memory for Flash<B, P>
+where
+    B::Error: Debug,
+    P::Error: Debug,
+{
     type Error = CommandError<B, P>;
 
     /// Switches to blocking mode
@@ -382,7 +386,11 @@ impl<B: Transfer<u8>, P: OutputPin> Memory for Flash<B, P> {
     }
 }
 
-impl<B: Transfer<u8>, P: OutputPin> Flash<B, P> {
+impl<B: Transfer<u8>, P: OutputPin> Flash<B, P>
+where
+    B::Error: Debug,
+    P::Error: Debug,
+{
     pub fn new(bus: B, pin_enable: P, pin_write_protection: P, pin_hold: P) -> Self {
         Self {
             bus,
@@ -522,5 +530,24 @@ impl Status {
         }
 
         result
+    }
+}
+
+impl<B: Transfer<u8>, P: OutputPin> Debug for CommandError<B, P>
+where
+    B::Error: Debug,
+    P::Error: Debug,
+{
+    fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
+        match self {
+            CommandError::TransferError(error) => write!(f, "StatusWriteError{error:?}"),
+            CommandError::EnablePinError(error) => write!(f, "StatusWriteError{error:?}"),
+            CommandError::HoldPinError(error) => write!(f, "StatusWriteError{error:?}"),
+            CommandError::WriteProtectionPinError(error) => write!(f, "WriteProtectionPinError{error:?}"),
+            CommandError::Busy => f.write_str("Busy"),
+            CommandError::InvalidAddress => f.write_str("InvalidAddress"),
+            CommandError::BufferTooSmall => f.write_str("BufferTooSmall"),
+            CommandError::BufferUneven => f.write_str("BufferUneven"),
+        }
     }
 }
