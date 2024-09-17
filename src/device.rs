@@ -124,6 +124,27 @@
 //! device.aai_program(0x5, &[0x1, 0x2, 0x3, 0x4]).unwrap();
 //! ````
 //!
+//! ## Sector erase
+//!
+//! The chip supports erasing single sectors. One sector has the size of 4 KByte.
+//!
+//! *Note: All memory blocks needs to be unprotected (s. [Reading status](#reading-status)), otherwise
+//! erase operation is ignored by device*
+//! ````
+//!# use mc_sst25::device::{Flash, Memory, Status};
+//!# use mc_sst25::example::{MockBus, MockPin};
+//!#
+//!# let bus = MockBus::default();
+//!# let pin_en = MockPin::default();
+//!# let pin_hold = MockPin::default();
+//!# let pin_wp = MockPin::default();
+//!#
+//!# let mut device = Flash::new(bus, pin_en, pin_wp, pin_hold);
+//!#
+//! // Erases the 32nd sector
+//! device.erase_sector(0x8000).unwrap();
+//! ````
+//!
 //! ## Full chip erase
 //!
 //! The chip supports erasing the entire memory.

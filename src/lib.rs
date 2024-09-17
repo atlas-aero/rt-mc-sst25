@@ -5,7 +5,7 @@
 //!
 //! # Example
 //!
-//! For all details see [device](crate::device) module.
+//! For all details see [device] module.
 //!
 //! ````
 //! use mc_sst25::device::{Flash, Memory};
