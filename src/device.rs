@@ -7,10 +7,8 @@
 //! * Three GPIO pins connected to EN, WP and HOLD of the flash chip implementing [embedded-hal OutputPin](embedded_hal::digital::v2::OutputPin)
 //!
 //! The device can be communicated with either in blocking or non-blocking mode:
-//! * In the case of blocking mode, the library waits internally until the respective operation is
-//! completely finished.
-//! * In the case of non-blocking mode, it is up to the caller to check the busy flag of the status register.
-//! (s. [Reading status register](#reading-status))
+//! * In the case of blocking mode, the library waits internally until the respective operation is completely finished.
+//! * In the case of non-blocking mode, it is up to the caller to check the busy flag of the status register. (s. [Reading status register](#reading-status))
 //!
 //! ````
 //!# use mc_sst25::device::{Flash, Memory};
