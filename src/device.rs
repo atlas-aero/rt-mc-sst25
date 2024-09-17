@@ -193,6 +193,10 @@ pub trait Memory {
     /// Writes the given status to status registers
     fn write_status(&mut self, status: Status) -> Result<(), Self::Error>;
 
+    /// The Sector-Erase instruction clears all bits in the selected 4 KByte sector to FFH.
+    /// A Sector-Erase instruction applied to a protected memory area will be ignored
+    fn erase_sector(&mut self, address: u32) -> Result<(), Self::Error>;
+
     /// Erases the full chip.
     fn erase_full(&mut self) -> Result<(), Self::Error>;
 
@@ -299,6 +303,21 @@ where
         let _ = self.transfer(&mut [0b0000_0001, status.to_registers()])?;
 
         Ok(())
+    }
+
+    /// The Sector-Erase instruction clears all bits in the selected 4 KByte sector to FFH.
+    /// A Sector-Erase instruction applied to a protected memory area will be ignored
+    fn erase_sector(&mut self, address: u32) -> Result<(), Self::Error> {
+        self.assert_valid_address(address)?;
+
+        self.write_enable()?;
+        self.assert_not_busy()?;
+
+        let mut frame = [0b0010_0000, 0x0, 0x0, 0x0];
+        self.address_command(address, &mut frame);
+        self.transfer(&mut frame)?;
+
+        self.wait(false)
     }
 
     /// Erases the full chip.
