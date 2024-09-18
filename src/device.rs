@@ -7,10 +7,8 @@
 //! * Three GPIO pins connected to EN, WP and HOLD of the flash chip implementing [embedded-hal OutputPin](embedded_hal::digital::v2::OutputPin)
 //!
 //! The device can be communicated with either in blocking or non-blocking mode:
-//! * In the case of blocking mode, the library waits internally until the respective operation is
-//! completely finished.
-//! * In the case of non-blocking mode, it is up to the caller to check the busy flag of the status register.
-//! (s. [Reading status register](#reading-status))
+//! * In the case of blocking mode, the library waits internally until the respective operation is completely finished.
+//! * In the case of non-blocking mode, it is up to the caller to check the busy flag of the status register. (s. [Reading status register](#reading-status))
 //!
 //! ````
 //!# use mc_sst25::device::{Flash, Memory};
@@ -124,6 +122,27 @@
 //! device.aai_program(0x5, &[0x1, 0x2, 0x3, 0x4]).unwrap();
 //! ````
 //!
+//! ## Sector erase
+//!
+//! The chip supports erasing single sectors. One sector has the size of 4 KByte.
+//!
+//! *Note: All memory blocks needs to be unprotected (s. [Reading status](#reading-status)), otherwise
+//! erase operation is ignored by device*
+//! ````
+//!# use mc_sst25::device::{Flash, Memory, Status};
+//!# use mc_sst25::example::{MockBus, MockPin};
+//!#
+//!# let bus = MockBus::default();
+//!# let pin_en = MockPin::default();
+//!# let pin_hold = MockPin::default();
+//!# let pin_wp = MockPin::default();
+//!#
+//!# let mut device = Flash::new(bus, pin_en, pin_wp, pin_hold);
+//!#
+//! // Erases the 32nd sector
+//! device.erase_sector(0x8000).unwrap();
+//! ````
+//!
 //! ## Full chip erase
 //!
 //! The chip supports erasing the entire memory.
@@ -192,6 +211,10 @@ pub trait Memory {
 
     /// Writes the given status to status registers
     fn write_status(&mut self, status: Status) -> Result<(), Self::Error>;
+
+    /// The Sector-Erase instruction clears all bits in the selected 4 KByte sector to FFH.
+    /// A Sector-Erase instruction applied to a protected memory area will be ignored
+    fn erase_sector(&mut self, address: u32) -> Result<(), Self::Error>;
 
     /// Erases the full chip.
     fn erase_full(&mut self) -> Result<(), Self::Error>;
@@ -299,6 +322,21 @@ where
         let _ = self.transfer(&mut [0b0000_0001, status.to_registers()])?;
 
         Ok(())
+    }
+
+    /// The Sector-Erase instruction clears all bits in the selected 4 KByte sector to FFH.
+    /// A Sector-Erase instruction applied to a protected memory area will be ignored
+    fn erase_sector(&mut self, address: u32) -> Result<(), Self::Error> {
+        self.assert_valid_address(address)?;
+
+        self.write_enable()?;
+        self.assert_not_busy()?;
+
+        let mut frame = [0b0010_0000, 0x0, 0x0, 0x0];
+        self.address_command(address, &mut frame);
+        self.transfer(&mut frame)?;
+
+        self.wait(false)
     }
 
     /// Erases the full chip.

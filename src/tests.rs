@@ -155,6 +155,93 @@ fn test_device_write_disable_success() {
 }
 
 #[test]
+fn test_device_erase_sector_address_error() {
+    let error = MockedPeripherals::default().into_flash().erase_sector(16777217).unwrap_err();
+    assert!(matches!(error, CommandError::InvalidAddress))
+}
+
+#[test]
+fn test_device_erase_sector_hold_error() {
+    let error = MockedPeripherals::hold_error().into_flash().erase_sector(0x0).unwrap_err();
+    assert!(matches!(error, CommandError::HoldPinError(10)))
+}
+
+#[test]
+fn test_device_erase_sector_full_wp_pin_error() {
+    let error = MockedPeripherals::wp_error().into_flash().erase_sector(0x0).unwrap_err();
+    assert!(matches!(error, CommandError::WriteProtectionPinError(15)))
+}
+
+#[test]
+fn test_device_erase_sector_busy() {
+    let error = MockedPeripherals::default()
+        .mock_configure()
+        .mock_enable_pin()
+        .expect_write_enable_command()
+        .mock_enable_pin()
+        .expect_status_request(&[0x0, 0b0000_0001])
+        .into_flash()
+        .erase_sector(0x0)
+        .unwrap_err();
+
+    assert!(matches!(error, CommandError::Busy))
+}
+
+#[test]
+fn test_device_erase_sector_transfer_error() {
+    let error = MockedPeripherals::default()
+        .mock_configure()
+        .mock_enable_pin()
+        .expect_write_enable_command()
+        .mock_enable_pin()
+        .expect_status_request(&[0x0, 0b0000_0010])
+        .mock_enable_pin()
+        .spi_transfer_error()
+        .into_flash()
+        .erase_sector(0x0)
+        .unwrap_err();
+
+    assert!(matches!(error, CommandError::TransferError(30)))
+}
+
+#[test]
+fn test_device_erase_sector_blocking() {
+    MockedPeripherals::default()
+        .mock_configure()
+        .mock_enable_pin()
+        .expect_write_enable_command()
+        .mock_enable_pin()
+        .expect_status_request(&[0x0, 0b0000_0010])
+        .mock_enable_pin()
+        .expect_transfer(&[0x20, 0x00, 0x80, 0x00], &[0x0])
+        .mock_enable_pin()
+        .expect_status_request(&[0x0, 0b0000_0001]) // Still busy
+        .mock_enable_pin()
+        .expect_status_request(&[0x0, 0b0000_0001]) // Still busy
+        .mock_enable_pin()
+        .expect_status_request(&[0x0, 0b0000_0000])
+        .into_flash()
+        .erase_sector(0x8000)
+        .unwrap();
+}
+
+#[test]
+fn test_device_erase_sector_non_blocking() {
+    let mut flash = MockedPeripherals::default()
+        .mock_configure()
+        .mock_enable_pin()
+        .expect_write_enable_command()
+        .mock_enable_pin()
+        .expect_status_request(&[0x0, 0b0000_0010])
+        .mock_enable_pin()
+        .expect_transfer(&[0x20, 0x00, 0x10, 0x00], &[0x0])
+        .into_flash();
+
+    flash.set_non_blocking();
+    flash.erase_sector(0x1000).unwrap();
+}
+
+#[test]
 fn test_device_erase_full_hold_error() {
     let error = MockedPeripherals::hold_error().into_flash().erase_full().unwrap_err();
     assert!(matches!(error, CommandError::HoldPinError(10)))
