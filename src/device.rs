@@ -3,8 +3,8 @@
 //! ## Setup
 //!
 //! Creating a [device](Flash) instance requires the following peripherals:
-//! * An SPI bus implementing [embedded-hal Transfer trait](embedded_hal::blocking::spi::Transfer)
-//! * Three GPIO pins connected to EN, WP and HOLD of the flash chip implementing [embedded-hal OutputPin](embedded_hal::digital::v2::OutputPin)
+//! * An SPI bus implementing [embedded-hal SpiDevice trait](embedded_hal::spi::SpiDevice)
+//! * Three GPIO pins connected to EN, WP and HOLD of the flash chip implementing [embedded-hal OutputPin](embedded_hal::digital::OutputPin)
 //!
 //! The device can be communicated with either in blocking or non-blocking mode:
 //! * In the case of blocking mode, the library waits internally until the respective operation is completely finished.
