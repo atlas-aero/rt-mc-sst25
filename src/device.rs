@@ -3,8 +3,8 @@
 //! ## Setup
 //!
 //! Creating a [device](Flash) instance requires the following peripherals:
-//! * An SPI bus implementing [embedded-hal Transfer trait](embedded_hal::blocking::spi::Transfer)
-//! * Three GPIO pins connected to EN, WP and HOLD of the flash chip implementing [embedded-hal OutputPin](embedded_hal::digital::v2::OutputPin)
+//! * An SPI bus implementing [embedded-hal SpiDevice trait](embedded_hal::spi::SpiDevice)
+//! * Three GPIO pins connected to EN, WP and HOLD of the flash chip implementing [embedded-hal OutputPin](embedded_hal::digital::OutputPin)
 //!
 //! The device can be communicated with either in blocking or non-blocking mode:
 //! * In the case of blocking mode, the library waits internally until the respective operation is completely finished.
@@ -15,11 +15,10 @@
 //!# use mc_sst25::example::{MockBus, MockPin};
 //!#
 //!# let bus = MockBus::default();
-//!# let pin_en = MockPin::default();
 //!# let pin_hold = MockPin::default();
 //!# let pin_wp = MockPin::default();
 //!#
-//! let mut device = Flash::new(bus, pin_en, pin_wp, pin_hold);
+//! let mut device = Flash::new(bus, pin_wp, pin_hold);
 //!
 //! // Blocking mode (default)
 //! device.set_blocking();
@@ -37,11 +36,10 @@
 //!# use mc_sst25::example::{MockBus, MockPin};
 //!#
 //!# let bus = MockBus::default();
-//!# let pin_en = MockPin::default();
 //!# let pin_hold = MockPin::default();
 //!# let pin_wp = MockPin::default();
 //!#
-//!# let mut device = Flash::new(bus, pin_en, pin_wp, pin_hold);
+//!# let mut device = Flash::new(bus, pin_wp, pin_hold);
 //!#
 //! let status = device.read_status().unwrap();
 //!
@@ -60,11 +58,10 @@
 //!# use mc_sst25::example::{MockBus, MockPin};
 //!#
 //!# let bus = MockBus::default();
-//!# let pin_en = MockPin::default();
 //!# let pin_hold = MockPin::default();
 //!# let pin_wp = MockPin::default();
 //!#
-//!# let mut device = Flash::new(bus, pin_en, pin_wp, pin_hold);
+//!# let mut device = Flash::new(bus, pin_wp, pin_hold);
 //!#
 //! let mut  status = Status::default();
 //! status.block0_protected = false;
@@ -87,11 +84,10 @@
 //!# use mc_sst25::example::{MockBus, MockPin};
 //!#
 //!# let bus = MockBus::default();
-//!# let pin_en = MockPin::default();
 //!# let pin_hold = MockPin::default();
 //!# let pin_wp = MockPin::default();
 //!#
-//!# let mut device = Flash::new(bus, pin_en, pin_wp, pin_hold);
+//!# let mut device = Flash::new(bus, pin_wp, pin_hold);
 //!#
 //! // Writing byte 0x64 to address 0xc8
 //! device.byte_program(0xc8, 0x64).unwrap();
@@ -109,11 +105,10 @@
 //!# use mc_sst25::example::{MockBus, MockPin};
 //!#
 //!# let bus = MockBus::default();
-//!# let pin_en = MockPin::default();
 //!# let pin_hold = MockPin::default();
 //!# let pin_wp = MockPin::default();
 //!#
-//!# let mut device = Flash::new(bus, pin_en, pin_wp, pin_hold);
+//!# let mut device = Flash::new(bus, pin_wp, pin_hold);
 //!#
 //! // Writing four bytes to address 0x5, so the following data is written:
 //! // Address 0x5 contains byte 0x1
@@ -133,11 +128,10 @@
 //!# use mc_sst25::example::{MockBus, MockPin};
 //!#
 //!# let bus = MockBus::default();
-//!# let pin_en = MockPin::default();
 //!# let pin_hold = MockPin::default();
 //!# let pin_wp = MockPin::default();
 //!#
-//!# let mut device = Flash::new(bus, pin_en, pin_wp, pin_hold);
+//!# let mut device = Flash::new(bus, pin_wp, pin_hold);
 //!#
 //! // Erases the 32nd sector
 //! device.erase_sector(0x8000).unwrap();
@@ -154,11 +148,10 @@
 //!# use mc_sst25::example::{MockBus, MockPin};
 //!#
 //!# let bus = MockBus::default();
-//!# let pin_en = MockPin::default();
 //!# let pin_hold = MockPin::default();
 //!# let pin_wp = MockPin::default();
 //!#
-//!# let mut device = Flash::new(bus, pin_en, pin_wp, pin_hold);
+//!# let mut device = Flash::new(bus, pin_wp, pin_hold);
 //!#
 //! device.erase_full().unwrap();
 //! ````
@@ -176,19 +169,18 @@
 //!# use mc_sst25::example::{MockBus, MockPin};
 //!#
 //!# let bus = MockBus::default();
-//!# let pin_en = MockPin::default();
 //!# let pin_hold = MockPin::default();
 //!# let pin_wp = MockPin::default();
 //!#
-//!# let mut device = Flash::new(bus, pin_en, pin_wp, pin_hold);
+//!# let mut device = Flash::new(bus, pin_wp, pin_hold);
 //!#
 //! // Reading four bytes starting at address 0x0
 //! let data = device.read::<4>(0x0).unwrap();
 //! assert_eq!([0xa, 0xb, 0xc, 0xd], data);
 //! ````
 use core::fmt::{Debug, Formatter};
-use embedded_hal::blocking::spi::Transfer;
-use embedded_hal::digital::v2::OutputPin;
+use embedded_hal::digital::OutputPin;
+use embedded_hal::spi::{Operation, SpiDevice};
 
 /// General flash memory interface
 pub trait Memory {
@@ -230,12 +222,9 @@ pub trait Memory {
 }
 
 /// SS25* flash memory chip
-pub struct Flash<B: Transfer<u8>, P: OutputPin> {
+pub struct Flash<B: SpiDevice<u8>, P: OutputPin> {
     /// SPI bus
     bus: B,
-
-    /// GPIO EN pin
-    pin_enable: P,
 
     /// GPIO WP pin
     pin_write_protection: P,
@@ -252,12 +241,9 @@ pub struct Flash<B: Transfer<u8>, P: OutputPin> {
 
 /// Error when communicating with the device
 #[derive(PartialEq, Eq)]
-pub enum CommandError<B: Transfer<u8>, P: OutputPin> {
+pub enum CommandError<B: SpiDevice<u8>, P: OutputPin> {
     /// SPI transfer error
     TransferError(B::Error),
-
-    /// Error while setting GPIO state of EN pin
-    EnablePinError(P::Error),
 
     /// Error while setting GPIO state of HOLD pin
     HoldPinError(P::Error),
@@ -280,9 +266,8 @@ pub enum CommandError<B: Transfer<u8>, P: OutputPin> {
 
 const CMD_AAI_PROGRAM: u8 = 0b1010_1101;
 
-impl<B: Transfer<u8>, P: OutputPin> Memory for Flash<B, P>
+impl<B: SpiDevice<u8>, P: OutputPin> Memory for Flash<B, P>
 where
-    B::Error: Debug,
     P::Error: Debug,
 {
     type Error = CommandError<B, P>;
@@ -299,18 +284,24 @@ where
 
     /// Reads and returns the status registers
     fn read_status(&mut self) -> Result<Status, CommandError<B, P>> {
-        Ok(Status::from_register(self.transfer(&mut [0b0000_0101, 0x0])?[1]))
+        self.configure()?;
+        let mut buffer = [0x0];
+        self.bus
+            .transaction(&mut [Operation::Write(&[0b0000_0101]), Operation::Read(&mut buffer)])
+            .map_err(CommandError::TransferError)?;
+
+        Ok(Status::from_register(buffer[0]))
     }
 
     /// Enables write operations
     fn write_enable(&mut self) -> Result<(), CommandError<B, P>> {
-        self.transfer(&mut [0b0000_0110])?;
+        self.write(&mut [0b0000_0110])?;
         Ok(())
     }
 
     /// Enables write operations
     fn write_disable(&mut self) -> Result<(), CommandError<B, P>> {
-        self.transfer(&mut [0b0000_0100])?;
+        self.write(&mut [0b0000_0100])?;
         Ok(())
     }
 
@@ -318,8 +309,8 @@ where
     fn write_status(&mut self, status: Status) -> Result<(), CommandError<B, P>> {
         self.write_enable()?;
 
-        self.bus.transfer(&mut [0x0]).map_err(CommandError::TransferError)?;
-        let _ = self.transfer(&mut [0b0000_0001, status.to_registers()])?;
+        self.bus.write(&[0x0]).map_err(CommandError::TransferError)?;
+        self.write(&mut [0b0000_0001, status.to_registers()])?;
 
         Ok(())
     }
@@ -334,7 +325,7 @@ where
 
         let mut frame = [0b0010_0000, 0x0, 0x0, 0x0];
         self.address_command(address, &mut frame);
-        self.transfer(&mut frame)?;
+        self.write(&mut frame)?;
 
         self.wait(false)
     }
@@ -345,7 +336,7 @@ where
         self.write_enable()?;
         self.assert_not_busy()?;
 
-        self.transfer(&mut [0b0110_0000])?;
+        self.write(&mut [0b0110_0000])?;
         self.wait(false)
     }
 
@@ -360,7 +351,7 @@ where
         let mut frame = [0b0000_0010, 0x0, 0x0, 0x0, data];
         self.address_command(address, &mut frame);
 
-        self.transfer(&mut frame)?;
+        self.write(&mut frame)?;
         self.wait(false)
     }
 
@@ -382,11 +373,11 @@ where
 
         let mut frame = [CMD_AAI_PROGRAM, 0x0, 0x0, 0x0, buffer[0], buffer[1]];
         self.address_command(address, &mut frame);
-        self.transfer(&mut frame)?;
+        self.write(&mut frame)?;
         self.wait(true)?;
 
         for chunk in buffer[2..].chunks(2) {
-            self.transfer(&mut [CMD_AAI_PROGRAM, chunk[0], chunk[1]])?;
+            self.write(&mut [CMD_AAI_PROGRAM, chunk[0], chunk[1]])?;
             self.wait(true)?;
         }
 
@@ -401,38 +392,23 @@ where
         let mut frame = [0b0000_0011, 0x0, 0x0, 0x0];
         self.address_command(address, &mut frame);
 
-        self.pin_enable.set_low().map_err(CommandError::EnablePinError)?;
-        if let Err(error) = self.bus.transfer(&mut frame) {
-            self.pin_enable.set_high().map_err(CommandError::EnablePinError)?;
+        if let Err(error) = self.bus.write(&frame) {
             return Err(CommandError::TransferError(error));
         }
 
         let mut buffer = [0x0; L];
-
-        match self.bus.transfer(&mut [0x0; L]) {
-            Ok(data) => {
-                buffer.clone_from_slice(data);
-            }
-            Err(error) => {
-                self.pin_enable.set_high().map_err(CommandError::EnablePinError)?;
-                return Err(CommandError::TransferError(error));
-            }
-        }
-
-        self.pin_enable.set_high().map_err(CommandError::EnablePinError)?;
+        self.bus.read(&mut buffer).map_err(CommandError::TransferError)?;
         Ok(buffer)
     }
 }
 
-impl<B: Transfer<u8>, P: OutputPin> Flash<B, P>
+impl<B: SpiDevice<u8>, P: OutputPin> Flash<B, P>
 where
-    B::Error: Debug,
     P::Error: Debug,
 {
-    pub fn new(bus: B, pin_enable: P, pin_write_protection: P, pin_hold: P) -> Self {
+    pub fn new(bus: B, pin_write_protection: P, pin_hold: P) -> Self {
         Self {
             bus,
-            pin_enable,
             pin_write_protection,
             pin_hold,
             configured: false,
@@ -440,16 +416,10 @@ where
         }
     }
 
-    /// Transfers the given data and returns the result
-    /// Handles the EN pin status and sets the pin back to HIGH even on error
-    fn transfer<'a>(&'a mut self, data: &'a mut [u8]) -> Result<&'a [u8], CommandError<B, P>> {
+    /// Writes the given data
+    fn write<'a>(&'a mut self, data: &'a mut [u8]) -> Result<(), CommandError<B, P>> {
         self.configure()?;
-
-        self.pin_enable.set_low().map_err(CommandError::EnablePinError)?;
-        let result = self.bus.transfer(data).map_err(CommandError::TransferError);
-        self.pin_enable.set_high().map_err(CommandError::EnablePinError)?;
-
-        result
+        self.bus.write(data).map_err(CommandError::TransferError)
     }
 
     /// Adds the given memory address to the command frame
@@ -571,15 +541,13 @@ impl Status {
     }
 }
 
-impl<B: Transfer<u8>, P: OutputPin> Debug for CommandError<B, P>
+impl<B: SpiDevice<u8>, P: OutputPin> Debug for CommandError<B, P>
 where
-    B::Error: Debug,
     P::Error: Debug,
 {
     fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
         match self {
             CommandError::TransferError(error) => write!(f, "StatusWriteError{error:?}"),
-            CommandError::EnablePinError(error) => write!(f, "StatusWriteError{error:?}"),
             CommandError::HoldPinError(error) => write!(f, "StatusWriteError{error:?}"),
             CommandError::WriteProtectionPinError(error) => write!(f, "WriteProtectionPinError{error:?}"),
             CommandError::Busy => f.write_str("Busy"),

@@ -1,15 +1,17 @@
 //! # Mocks for doc examples
 use core::convert::Infallible;
-use embedded_hal::blocking::spi::Transfer;
-use embedded_hal::digital::v2::OutputPin;
+use embedded_hal::digital::{ErrorType, OutputPin};
+use embedded_hal::spi::{Operation, SpiDevice};
 
 /// Mocked GPIO output pin
 #[derive(Default, Debug)]
 pub struct MockPin {}
 
-impl OutputPin for MockPin {
+impl ErrorType for MockPin {
     type Error = Infallible;
+}
 
+impl OutputPin for MockPin {
     fn set_low(&mut self) -> Result<(), Self::Error> {
         Ok(())
     }
@@ -26,25 +28,36 @@ pub struct MockBus {
     read_command: bool,
 }
 
-impl Transfer<u8> for MockBus {
+impl embedded_hal::spi::ErrorType for MockBus {
     type Error = Infallible;
+}
 
-    fn transfer<'w>(&mut self, words: &'w mut [u8]) -> Result<&'w [u8], Self::Error> {
-        if words[0] == 0b0000_0011 {
-            self.read_command = true;
-            return Ok(&[0x0]);
+impl SpiDevice<u8> for MockBus {
+    fn transaction(&mut self, operations: &mut [Operation<'_, u8>]) -> Result<(), Self::Error> {
+        for operation in operations {
+            match operation {
+                Operation::Read(buffer) => {
+                    if self.read_command {
+                        self.read_command = false;
+
+                        if buffer.len() == 5 {
+                            buffer.copy_from_slice(&[0x66, 0x1, 0x2, 0x3, 0x4])
+                        } else {
+                            buffer.copy_from_slice(&[0xa, 0xb, 0xc, 0xd])
+                        };
+                    }
+                }
+                Operation::Write(words) => {
+                    if words[0] == 0b0000_0011 {
+                        self.read_command = true;
+                    }
+                }
+                Operation::Transfer(_, _) => unimplemented!(),
+                Operation::TransferInPlace(_) => unimplemented!(),
+                Operation::DelayNs(_) => unimplemented!(),
+            }
         }
 
-        if self.read_command {
-            self.read_command = false;
-
-            return if words.len() == 5 {
-                Ok(&[0x66, 0x1, 0x2, 0x3, 0x4])
-            } else {
-                Ok(&[0xa, 0xb, 0xc, 0xd])
-            };
-        }
-
-        Ok(&[0x0, 0b0000_0000])
+        Ok(())
     }
 }

@@ -12,11 +12,10 @@
 //! use mc_sst25::example::{MockBus, MockPin};
 //!
 //! let bus = MockBus::default();
-//! let pin_en = MockPin::default();
 //! let pin_hold = MockPin::default();
 //! let pin_wp = MockPin::default();
 //!
-//! let mut device = Flash::new(bus, pin_en, pin_wp, pin_hold);
+//! let mut device = Flash::new(bus, pin_wp, pin_hold);
 //!
 //! // Writing a single byte
 //! device.erase_full().unwrap();
