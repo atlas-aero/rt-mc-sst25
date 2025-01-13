@@ -393,9 +393,10 @@ where
         self.address_command(address, &mut frame);
 
         let mut buffer = [0x0; L];
-        let mut transactions = [Operation::Write(&frame), Operation::Read(&mut buffer)];
+        self.bus
+            .transaction(&mut [Operation::Write(&frame), Operation::Read(&mut buffer)])
+            .map_err(CommandError::TransferError)?;
 
-        self.bus.transaction(&mut transactions).map_err(CommandError::TransferError)?;
         Ok(buffer)
     }
 }
