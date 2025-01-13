@@ -392,12 +392,10 @@ where
         let mut frame = [0b0000_0011, 0x0, 0x0, 0x0];
         self.address_command(address, &mut frame);
 
-        if let Err(error) = self.bus.write(&frame) {
-            return Err(CommandError::TransferError(error));
-        }
-
         let mut buffer = [0x0; L];
-        self.bus.read(&mut buffer).map_err(CommandError::TransferError)?;
+        let mut transactions = [Operation::Write(&frame), Operation::Read(&mut buffer)];
+
+        self.bus.transaction(&mut transactions).map_err(CommandError::TransferError)?;
         Ok(buffer)
     }
 }

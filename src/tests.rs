@@ -424,8 +424,7 @@ fn test_device_read_transfer_error_command() {
 fn test_device_read_transfer_error_data() {
     let error = MockedPeripherals::default()
         .mock_configure()
-        .expect_single_write(&[0b0000_0011, 0x0, 0x0, 0x0])
-        .spi_transfer_error()
+        .expect_bundled_transfer(&[0b0000_0011, 0x0, 0x0, 0x0], &[0x47], Err(BusError::Error1))
         .into_flash()
         .read::<1>(0x0)
         .unwrap_err();
@@ -437,9 +436,10 @@ fn test_device_read_transfer_error_data() {
 fn test_device_read_success() {
     let result = MockedPeripherals::default()
         .mock_configure()
-        .expect_transfer(
+        .expect_bundled_transfer(
             &[0b0000_0011, 0b0000_0110, 0b0001_1010, 0b1000_0000],
             &[0x47, 0x20],
+            Ok(()),
         )
         .into_flash()
         .read::<2>(0x61A80)
@@ -693,11 +693,6 @@ impl MockedPeripherals {
         self.expect_single_write(&[0b0110_0000])
     }
 
-    /// Expects a generic command
-    pub fn expect_transfer(self, command: &'static [u8], response: &'static [u8]) -> Self {
-        self.expect_single_write(command).expect_single_read(response)
-    }
-
     /// Expects a single write operation
     pub fn expect_single_write(mut self, command: &'static [u8]) -> Self {
         self.bus.expect_transaction().times(1).returning(move |operations| {
@@ -715,17 +710,31 @@ impl MockedPeripherals {
         self
     }
 
-    pub fn expect_single_read(mut self, response: &'static [u8]) -> Self {
+    /// Expects a bundled write and read operation
+    pub fn expect_bundled_transfer(
+        mut self,
+        command: &'static [u8],
+        response: &'static [u8],
+        result: Result<(), BusError>,
+    ) -> Self {
         self.bus.expect_transaction().times(1).returning(move |operations| {
-            assert_eq!(1, operations.len(), "Operations: {operations:?}");
-            match &mut operations[0] {
+            assert_eq!(2, operations.len(), "Operations: {operations:?}");
+
+            match &operations[0] {
+                Operation::Write(data) => {
+                    assert_eq!(&command, data);
+                }
+                _ => panic!("Expected Write operation"),
+            }
+
+            match &mut operations[1] {
                 Operation::Read(buffer) => {
                     buffer.copy_from_slice(response);
                 }
                 _ => panic!("Expected Read operation"),
             }
 
-            Ok(())
+            result
         });
 
         self
